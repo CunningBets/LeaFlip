@@ -378,21 +378,31 @@ static NfcCommand leaf_flip_run_flow(LeafFlipReader *reader)
             leaf_flip_set_error(app, "Select Open Application failed");
             break;
         }
+        leaf_flip_signal_progress(app, LeafFlipStepSelect);
         if (!app->result.root_verified)
         {
             app->stage = "READ certificate";
             if (!leaf_flip_read_certificate(reader))
                 break;
+            leaf_flip_signal_progress(app, LeafFlipStepRead);
             app->stage = "VERIFY certificate";
             if (!leaf_flip_parse_and_verify_certificate(app))
                 break;
+            leaf_flip_signal_progress(app, LeafFlipStepCertVerified);
+        }
+        else
+        {
+            leaf_flip_signal_progress(app, LeafFlipStepRead);
+            leaf_flip_signal_progress(app, LeafFlipStepCertVerified);
         }
         app->stage = "AUTH challenge";
         if (!leaf_flip_authenticate(reader))
             break;
+        leaf_flip_signal_progress(app, LeafFlipStepAuth);
         app->stage = "VERIFY card";
         if (!leaf_flip_verify_card_signature(app))
             break;
+        leaf_flip_signal_progress(app, LeafFlipStepCardVerified);
         ok = true;
     } while (false);
 

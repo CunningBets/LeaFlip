@@ -150,6 +150,13 @@ static bool oid_is_serial_number(const DerTlv *oid)
            memcmp(oid->value, serial_oid, sizeof(serial_oid)) == 0;
 }
 
+static bool oid_is_common_name(const DerTlv *oid)
+{
+    static const uint8_t cn_oid[] = {0x55, 0x04, 0x03};
+    return oid->tag == ASN1_OID && oid->value_len == sizeof(cn_oid) &&
+           memcmp(oid->value, cn_oid, sizeof(cn_oid)) == 0;
+}
+
 static void copy_printable_value(char *out, size_t out_size, const DerTlv *value)
 {
     size_t copy_len = MIN(value->value_len, out_size - 1);
@@ -157,14 +164,23 @@ static void copy_printable_value(char *out, size_t out_size, const DerTlv *value
     out[copy_len] = '\0';
 }
 
-static bool parse_subject_open_id(const DerTlv *subject, char *open_id, size_t open_id_size)
+static bool parse_name(
+    const DerTlv *name,
+    char *open_id,
+    size_t open_id_size,
+    char *cn,
+    size_t cn_size)
 {
-    const uint8_t *rdn_cursor = subject->value;
-    const uint8_t *subject_end = subject->value + subject->value_len;
-    while (rdn_cursor < subject_end)
+    if (open_id && open_id_size)
+        open_id[0] = '\0';
+    if (cn && cn_size)
+        cn[0] = '\0';
+    const uint8_t *rdn_cursor = name->value;
+    const uint8_t *name_end = name->value + name->value_len;
+    while (rdn_cursor < name_end)
     {
         DerTlv rdn;
-        if (!der_next(&rdn_cursor, subject_end, &rdn) || rdn.tag != ASN1_SET)
+        if (!der_next(&rdn_cursor, name_end, &rdn) || rdn.tag != ASN1_SET)
             return false;
         const uint8_t *attr_cursor = rdn.value;
         const uint8_t *rdn_end = rdn.value + rdn.value_len;
@@ -181,14 +197,17 @@ static bool parse_subject_open_id(const DerTlv *subject, char *open_id, size_t o
                 return false;
             if (!der_next(&field_cursor, attr_end, &value))
                 return false;
-            if (oid_is_serial_number(&oid))
+            if (open_id && open_id_size && oid_is_serial_number(&oid))
             {
                 copy_printable_value(open_id, open_id_size, &value);
-                return open_id[0] != '\0';
+            }
+            else if (cn && cn_size && oid_is_common_name(&oid))
+            {
+                copy_printable_value(cn, cn_size, &value);
             }
         }
     }
-    return false;
+    return true;
 }
 
 static bool parse_spki_public_key(const DerTlv *spki, uint8_t public_key[LEAF_FLIP_PUBLIC_KEY_SIZE])
@@ -209,15 +228,13 @@ static bool parse_spki_public_key(const DerTlv *spki, uint8_t public_key[LEAF_FL
     return public_key[0] == 0x04;
 }
 
-static bool parse_tbs_certificate(
-    const DerTlv *tbs,
-    char open_id[LEAF_FLIP_OPEN_ID_SIZE],
-    uint8_t public_key[LEAF_FLIP_PUBLIC_KEY_SIZE])
+static bool parse_tbs_certificate(const DerTlv *tbs, LeafFlipResult *result)
 {
     const uint8_t *cursor = tbs->value;
     const uint8_t *end = tbs->value + tbs->value_len;
     DerTlv field;
 
+    /* Optional explicit version [0] */
     if (!der_next(&cursor, end, &field))
         return false;
     if (field.tag == (ASN1_CONSTRUCTED | 0x80))
@@ -225,20 +242,27 @@ static bool parse_tbs_certificate(
         if (!der_next(&cursor, end, &field))
             return false;
     }
-
-    for (size_t i = 0; i < 4; i++)
-    {
-        if (!der_next(&cursor, end, &field))
-            return false;
-    }
-    if (field.tag != ASN1_SEQUENCE)
+    /* field is now serial number; advance past signature alg */
+    if (!der_next(&cursor, end, &field))
         return false;
-    if (!parse_subject_open_id(&field, open_id, LEAF_FLIP_OPEN_ID_SIZE))
-        return false;
-
+    /* issuer */
     if (!der_next(&cursor, end, &field) || field.tag != ASN1_SEQUENCE)
         return false;
-    return parse_spki_public_key(&field, public_key);
+    parse_name(&field, NULL, 0, result->issuer_cn, sizeof(result->issuer_cn));
+    /* validity */
+    if (!der_next(&cursor, end, &field))
+        return false;
+    /* subject */
+    if (!der_next(&cursor, end, &field) || field.tag != ASN1_SEQUENCE)
+        return false;
+    if (!parse_name(&field, result->open_id, sizeof(result->open_id), result->subject_cn, sizeof(result->subject_cn)))
+        return false;
+    if (result->open_id[0] == '\0')
+        return false;
+    /* SPKI */
+    if (!der_next(&cursor, end, &field) || field.tag != ASN1_SEQUENCE)
+        return false;
+    return parse_spki_public_key(&field, result->public_key);
 }
 
 static bool parse_certificate(
@@ -278,7 +302,7 @@ static bool parse_certificate(
     parts->cert_signature_der = sig_value.value + 1;
     parts->cert_signature_der_len = sig_value.value_len - 1;
 
-    return parse_tbs_certificate(&tbs, result->open_id, result->public_key);
+    return parse_tbs_certificate(&tbs, result);
 }
 
 static bool verify_signature_values(
@@ -388,5 +412,28 @@ bool leaf_flip_verify_card_signature(LeafFlipApp *app)
         leaf_flip_set_error(app, "Card signature check failed");
         return false;
     }
+    return true;
+}
+
+bool leaf_flip_reparse_loaded(LeafFlipApp *app)
+{
+    LeafFlipCertParts parts;
+    memset(&parts, 0, sizeof(parts));
+    if (app->result.cert_len == 0)
+        return false;
+    if (!parse_certificate(app->result.cert, app->result.cert_len, &app->result, &parts))
+        return false;
+    app->result.root_verified = verify_der_signature(
+        leaf_root_public_key, parts.tbs, parts.tbs_len, parts.cert_signature_der, parts.cert_signature_der_len);
+
+    uint8_t message[36];
+    message[0] = 0xF0;
+    message[1] = 0xF0;
+    message[2] = 0x80;
+    message[3] = 0x00;
+    memcpy(message + 4, app->result.card_random, LEAF_FLIP_RANDOM_SIZE);
+    memcpy(message + 20, app->result.challenge, LEAF_FLIP_RANDOM_SIZE);
+    app->result.card_verified = verify_raw_signature(
+        app->result.public_key, message, sizeof(message), app->result.signature);
     return true;
 }
