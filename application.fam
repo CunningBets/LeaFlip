@@ -1,0 +1,13 @@
+App(
+    appid="leaf_flip",
+    name="LeafFlip",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="leaf_flip_app",
+    stack_size=6 * 1024,
+    fap_category="NFC",
+    fap_version="0.1",
+    fap_description="LEAF Verified Open Application reader",
+    fap_author="pat",
+    fap_libs=["mbedtls"],
+    sources=["*.c"],
+)
