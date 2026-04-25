@@ -9,5 +9,12 @@ App(
     fap_description="LEAF Verified Open Application reader",
     fap_icon="leaflip.png",  # 10x10 1-bit PNG
     fap_libs=["mbedtls"],
-    sources=["*.c"],
+    sources=[
+        "leaf_flip.c",
+        "leaf_flip_access.c",
+        "leaf_flip_crypto.c",
+        "leaf_flip_reader.c",
+        "leaf_flip_save.c",
+        "scenes/*.c",
+    ],
 )

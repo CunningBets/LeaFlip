@@ -23,30 +23,28 @@
 #include <lib/nfc/protocols/iso14443_4a/iso14443_4a.h>
 #include <lib/nfc/protocols/iso14443_4a/iso14443_4a_poller.h>
 
-#define LEAF_FLIP_CERT_MAX 2048
-#define LEAF_FLIP_APDU_MAX 384
-#define LEAF_FLIP_OPEN_ID_SIZE 13
-#define LEAF_FLIP_UID_MAX 10
+#define LEAF_FLIP_CERT_MAX        2048
+#define LEAF_FLIP_APDU_MAX        384
+#define LEAF_FLIP_OPEN_ID_SIZE    13
+#define LEAF_FLIP_UID_MAX         10
 #define LEAF_FLIP_PUBLIC_KEY_SIZE 65
-#define LEAF_FLIP_RANDOM_SIZE 16
-#define LEAF_FLIP_SIGNATURE_SIZE 64
-#define LEAF_FLIP_AUTH_RESP_MAX 96
-#define LEAF_FLIP_FILENAME_MAX 64
+#define LEAF_FLIP_RANDOM_SIZE     16
+#define LEAF_FLIP_SIGNATURE_SIZE  64
+#define LEAF_FLIP_AUTH_RESP_MAX   96
+#define LEAF_FLIP_FILENAME_MAX    64
 
-#define LEAF_FLIP_APP_FOLDER EXT_PATH("apps_data/leaf_flip")
-#define LEAF_FLIP_FILE_EXT ".lvr"
-#define LEAF_FLIP_FILE_HEADER "LeafFlip Result"
+#define LEAF_FLIP_APP_FOLDER       EXT_PATH("apps_data/leaf_flip")
+#define LEAF_FLIP_FILE_EXT         ".lvr"
+#define LEAF_FLIP_FILE_HEADER      "LeafFlip Result"
 #define LEAF_FLIP_ACCESS_LIST_PATH EXT_PATH("apps_data/leaf_flip/access_list.txt")
-#define LEAF_FLIP_ALIAS_MAX 32
+#define LEAF_FLIP_ALIAS_MAX        32
 
-typedef enum
-{
+typedef enum {
     LeafFlipModeRead = 0,
     LeafFlipModeAccess,
 } LeafFlipMode;
 
-typedef enum
-{
+typedef enum {
     LeafFlipViewMainMenu,
     LeafFlipViewScanPopup,
     LeafFlipViewProgress,
@@ -56,8 +54,7 @@ typedef enum
     LeafFlipViewFilename,
 } LeafFlipView;
 
-typedef enum
-{
+typedef enum {
     LeafFlipStepSelect = 0,
     LeafFlipStepRead,
     LeafFlipStepCertVerified,
@@ -66,16 +63,14 @@ typedef enum
     LeafFlipStepCount,
 } LeafFlipStep;
 
-typedef enum
-{
+typedef enum {
     LeafFlipEventDetected = 100,
     LeafFlipEventSuccess,
     LeafFlipEventError,
     LeafFlipEventProgress,
 } LeafFlipEvent;
 
-typedef struct
-{
+typedef struct {
     uint8_t cert[LEAF_FLIP_CERT_MAX];
     size_t cert_len;
     char open_id[LEAF_FLIP_OPEN_ID_SIZE];
@@ -95,77 +90,89 @@ typedef struct
 
 typedef struct LeafFlipApp LeafFlipApp;
 
-struct LeafFlipApp
-{
-    ViewDispatcher *view_dispatcher;
-    Gui *gui;
-    NotificationApp *notifications;
-    Storage *storage;
-    DialogsApp *dialogs;
+struct LeafFlipApp {
+    ViewDispatcher* view_dispatcher;
+    Gui* gui;
+    NotificationApp* notifications;
+    Storage* storage;
+    DialogsApp* dialogs;
 
-    Submenu *main_menu;
-    Submenu *more_menu;
-    Popup *popup;
-    Widget *progress_widget;
-    Widget *verified_widget;
-    TextBox *text_box;
-    TextInput *text_input;
-    FuriString *text;
+    Submenu* main_menu;
+    Submenu* more_menu;
+    Popup* popup;
+    Widget* progress_widget;
+    Widget* verified_widget;
+    TextBox* text_box;
+    TextInput* text_input;
+    FuriString* text;
 
-    Nfc *nfc;
-    NfcScanner *scanner;
-    NfcPoller *poller;
-    NfcDevice *nfc_device;
+    Nfc* nfc;
+    NfcScanner* scanner;
+    NfcPoller* poller;
+    NfcDevice* nfc_device;
 
     LeafFlipView current_view;
-    enum
-    {
+    enum {
         LeafFlipTextModeNone,
         LeafFlipTextModeInfo,
-        LeafFlipTextModeMessage
+        LeafFlipTextModeMessage,
+        LeafFlipTextModeAbout
     } text_mode;
+    bool info_from_more;
     LeafFlipResult result;
     bool result_loaded;
     LeafFlipMode mode;
     int progress_step;
     uint16_t last_sw;
-    const char *stage;
+    const char* stage;
     char error[96];
     char filename[LEAF_FLIP_FILENAME_MAX];
 };
 
-typedef struct
-{
-    LeafFlipApp *app;
-    Iso14443_4aPoller *poller;
-    BitBuffer *tx;
-    BitBuffer *rx;
+typedef struct {
+    LeafFlipApp* app;
+    Iso14443_4aPoller* poller;
+    BitBuffer* tx;
+    BitBuffer* rx;
 } LeafFlipReader;
 
-NfcCommand leaf_flip_poller_callback(NfcGenericEvent event, void *context);
+NfcCommand leaf_flip_poller_callback(NfcGenericEvent event, void* context);
 
-bool leaf_flip_save_result(LeafFlipApp *app, const char *filename);
-bool leaf_flip_load_result(LeafFlipApp *app, const char *path);
-bool leaf_flip_reparse_loaded(LeafFlipApp *app);
+bool leaf_flip_save_result(LeafFlipApp* app, const char* filename);
+bool leaf_flip_load_result(LeafFlipApp* app, const char* path);
+bool leaf_flip_reparse_loaded(LeafFlipApp* app);
 
-void leaf_flip_show_main_menu(LeafFlipApp *app);
-void leaf_flip_show_progress(LeafFlipApp *app);
-void leaf_flip_update_progress(LeafFlipApp *app);
-void leaf_flip_show_verified(LeafFlipApp *app);
-void leaf_flip_show_more_menu(LeafFlipApp *app);
-void leaf_flip_show_info(LeafFlipApp *app);
-void leaf_flip_show_message(LeafFlipApp *app, const char *header, const char *body);
-void leaf_flip_show_save_dialog(LeafFlipApp *app);
-void leaf_flip_show_error(LeafFlipApp *app);
-void leaf_flip_show_access_result(LeafFlipApp *app, bool granted, const char *label, const char *reason);
-void leaf_flip_set_error(LeafFlipApp *app, const char *format, ...);
-void leaf_flip_signal_progress(LeafFlipApp *app, LeafFlipStep step);
+void leaf_flip_stop_nfc(LeafFlipApp* app);
+void leaf_flip_start_scan(LeafFlipApp* app);
+void leaf_flip_start_access_scan(LeafFlipApp* app);
+void leaf_flip_load_from_file(LeafFlipApp* app);
+
+void leaf_flip_show_main_menu(LeafFlipApp* app);
+void leaf_flip_show_progress(LeafFlipApp* app);
+void leaf_flip_update_progress(LeafFlipApp* app);
+void leaf_flip_show_verified(LeafFlipApp* app);
+void leaf_flip_show_more_menu(LeafFlipApp* app);
+void leaf_flip_show_info(LeafFlipApp* app);
+void leaf_flip_show_message(LeafFlipApp* app, const char* header, const char* body);
+void leaf_flip_show_save_dialog(LeafFlipApp* app);
+void leaf_flip_show_error(LeafFlipApp* app);
+void leaf_flip_show_about(LeafFlipApp* app);
+void leaf_flip_show_access_result(
+    LeafFlipApp* app,
+    bool granted,
+    const char* label,
+    const char* reason);
+void leaf_flip_set_error(LeafFlipApp* app, const char* format, ...);
+void leaf_flip_signal_progress(LeafFlipApp* app, LeafFlipStep step);
 
 /* Access list management */
-bool leaf_flip_access_list_exists(LeafFlipApp *app);
+bool leaf_flip_access_list_exists(LeafFlipApp* app);
 /* Returns true if open_id is in the list. If found and alias_out non-NULL,
  * copies the alias (may be empty string) into alias_out (size alias_out_size). */
 bool leaf_flip_access_list_lookup(
-    LeafFlipApp *app, const char *open_id, char *alias_out, size_t alias_out_size);
-bool leaf_flip_access_list_add(LeafFlipApp *app, const char *open_id, const char *alias);
-bool leaf_flip_access_list_remove(LeafFlipApp *app, const char *open_id);
+    LeafFlipApp* app,
+    const char* open_id,
+    char* alias_out,
+    size_t alias_out_size);
+bool leaf_flip_access_list_add(LeafFlipApp* app, const char* open_id, const char* alias);
+bool leaf_flip_access_list_remove(LeafFlipApp* app, const char* open_id);
