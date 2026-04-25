@@ -18,8 +18,10 @@ static const NotificationSequence leaf_flip_blink_stop = {
 
 /* ---- Forward decls ---- */
 static void leaf_flip_start_scan(LeafFlipApp *app);
+static void leaf_flip_start_access_scan(LeafFlipApp *app);
 static void leaf_flip_stop_nfc(LeafFlipApp *app);
 static void leaf_flip_load_from_file(LeafFlipApp *app);
+static void leaf_flip_handle_access_result(LeafFlipApp *app);
 
 /* Tracks where to return after viewing Info ("More" path vs "Load" path) */
 static bool info_from_more = true;
@@ -96,13 +98,17 @@ static void leaf_flip_scan_callback(NfcScannerEvent event, void *context)
 static void leaf_flip_main_menu_callback(void *context, uint32_t index)
 {
     LeafFlipApp *app = context;
-    if (index == 0)
+    switch (index)
     {
+    case 0:
         leaf_flip_start_scan(app);
-    }
-    else if (index == 1)
-    {
+        break;
+    case 1:
+        leaf_flip_start_access_scan(app);
+        break;
+    case 2:
         leaf_flip_load_from_file(app);
+        break;
     }
 }
 
@@ -111,7 +117,12 @@ void leaf_flip_show_main_menu(LeafFlipApp *app)
     submenu_reset(app->main_menu);
     submenu_set_header(app->main_menu, "LeafFlip");
     submenu_add_item(app->main_menu, "Read LEAF card", 0, leaf_flip_main_menu_callback, app);
-    submenu_add_item(app->main_menu, "Load past read", 1, leaf_flip_main_menu_callback, app);
+    if (leaf_flip_access_list_exists(app))
+    {
+        submenu_add_item(
+            app->main_menu, "Access Verifier", 1, leaf_flip_main_menu_callback, app);
+    }
+    submenu_add_item(app->main_menu, "Load past read", 2, leaf_flip_main_menu_callback, app);
     app->current_view = LeafFlipViewMainMenu;
     view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewMainMenu);
 }
@@ -122,6 +133,7 @@ static void leaf_flip_start_scan(LeafFlipApp *app)
 {
     memset(&app->result, 0, sizeof(app->result));
     app->result_loaded = false;
+    app->mode = LeafFlipModeRead;
     app->progress_step = -1;
     app->last_sw = 0;
     app->stage = "Scan";
@@ -129,6 +141,27 @@ static void leaf_flip_start_scan(LeafFlipApp *app)
 
     popup_reset(app->popup);
     popup_set_header(app->popup, "Scan LEAF card", 64, 14, AlignCenter, AlignTop);
+    popup_set_text(app->popup, "Hold card near\nNFC antenna", 64, 36, AlignCenter, AlignTop);
+    app->current_view = LeafFlipViewScanPopup;
+    view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewScanPopup);
+
+    app->scanner = nfc_scanner_alloc(app->nfc);
+    nfc_scanner_start(app->scanner, leaf_flip_scan_callback, app);
+    notification_message(app->notifications, &leaf_flip_blink_start);
+}
+
+static void leaf_flip_start_access_scan(LeafFlipApp *app)
+{
+    memset(&app->result, 0, sizeof(app->result));
+    app->result_loaded = false;
+    app->mode = LeafFlipModeAccess;
+    app->progress_step = -1;
+    app->last_sw = 0;
+    app->stage = "Scan";
+    app->error[0] = '\0';
+
+    popup_reset(app->popup);
+    popup_set_header(app->popup, "Access Verifier", 64, 14, AlignCenter, AlignTop);
     popup_set_text(app->popup, "Hold card near\nNFC antenna", 64, 36, AlignCenter, AlignTop);
     app->current_view = LeafFlipViewScanPopup;
     view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewScanPopup);
@@ -207,19 +240,115 @@ void leaf_flip_show_verified(LeafFlipApp *app)
     notification_message(app->notifications, &sequence_success);
 }
 
+/* --- Access result screen --- */
+
+static void leaf_flip_access_button_callback(GuiButtonType type, InputType input, void *context)
+{
+    LeafFlipApp *app = context;
+    if (input != InputTypeShort)
+        return;
+    if (type == GuiButtonTypeLeft)
+        leaf_flip_start_access_scan(app);
+}
+
+void leaf_flip_show_access_result(
+    LeafFlipApp *app, bool granted, const char *label, const char *reason)
+{
+    /*
+     * Layout (screen 128x64, one left button bar 13px at bottom → usable 51px):
+     *
+     *  y=0-12  : GRANTED / DENIED   FontPrimary  centred x=64
+     *  y=12-38 : big + / -          FontBigNumbers centred x=64 (symbol ~22px tall)
+     *  y=38-44 : label              FontPrimary  centred x=64
+     *  y=44-50 : reason/sub         FontSecondary centred x=64
+     *  y=51-64 : [Scan] button
+     *
+     * FontBigNumbers is the tallest font on Flipper (~22px), centred in the
+     * middle of the screen it reads as a large mark without needing a custom icon.
+     */
+    widget_reset(app->verified_widget);
+    if (granted)
+    {
+        widget_add_string_element(
+            app->verified_widget, 64, 2, AlignCenter, AlignTop, FontPrimary, "GRANTED");
+        widget_add_string_element(
+            app->verified_widget, 64, 14, AlignCenter, AlignTop, FontBigNumbers, "+");
+        if (label && label[0])
+            widget_add_string_element(
+                app->verified_widget, 64, 38, AlignCenter, AlignTop, FontSecondary, label);
+    }
+    else
+    {
+        widget_add_string_element(
+            app->verified_widget, 64, 2, AlignCenter, AlignTop, FontPrimary, "DENIED");
+        widget_add_string_element(
+            app->verified_widget, 64, 14, AlignCenter, AlignTop, FontBigNumbers, "-");
+        if (reason && reason[0])
+            widget_add_string_element(
+                app->verified_widget, 64, 38, AlignCenter, AlignTop, FontSecondary, reason);
+        else if (label && label[0])
+            widget_add_string_element(
+                app->verified_widget, 64, 38, AlignCenter, AlignTop, FontSecondary, label);
+    }
+    widget_add_button_element(
+        app->verified_widget, GuiButtonTypeLeft, "Scan", leaf_flip_access_button_callback, app);
+    app->current_view = LeafFlipViewVerified;
+    view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewVerified);
+    notification_message(
+        app->notifications, granted ? &sequence_success : &sequence_error);
+}
+
+static void leaf_flip_handle_access_result(LeafFlipApp *app)
+{
+    /* Called on successful card read in Access mode. Verify against access list. */
+    char alias[LEAF_FLIP_ALIAS_MAX] = {0};
+    bool listed = leaf_flip_access_list_lookup(
+        app, app->result.open_id, alias, sizeof(alias));
+    if (!listed)
+    {
+        leaf_flip_show_access_result(app, false, app->result.open_id, "Not in access list");
+        return;
+    }
+    const char *label = (alias[0] != '\0') ? alias : app->result.open_id;
+    const char *sub = (alias[0] != '\0') ? app->result.open_id : NULL;
+    leaf_flip_show_access_result(app, true, label, sub);
+}
+
 /* --- More menu --- */
+
+#define MORE_IDX_SAVE 0
+#define MORE_IDX_INFO 1
+#define MORE_IDX_ACCESS_TOGGLE 2
 
 static void leaf_flip_more_menu_callback(void *context, uint32_t index)
 {
     LeafFlipApp *app = context;
-    if (index == 0)
+    if (index == MORE_IDX_SAVE)
     {
         leaf_flip_show_save_dialog(app);
     }
-    else if (index == 1)
+    else if (index == MORE_IDX_INFO)
     {
         info_from_more = true;
         leaf_flip_show_info(app);
+    }
+    else if (index == MORE_IDX_ACCESS_TOGGLE)
+    {
+        bool listed = leaf_flip_access_list_lookup(app, app->result.open_id, NULL, 0);
+        if (listed)
+        {
+            if (leaf_flip_access_list_remove(app, app->result.open_id))
+                leaf_flip_show_message(app, "Removed", "Open ID removed from access list.");
+            else
+                leaf_flip_show_message(app, "Failed", "Could not update access list.");
+        }
+        else
+        {
+            if (leaf_flip_access_list_add(app, app->result.open_id, NULL))
+                leaf_flip_show_message(app, "Added", "Open ID added to access list.\n\nEdit the access_list.txt file on your SD card to set an alias.");
+            else
+                leaf_flip_show_message(app, "Failed", "Could not update access list.");
+        }
     }
 }
 
@@ -227,8 +356,18 @@ void leaf_flip_show_more_menu(LeafFlipApp *app)
 {
     submenu_reset(app->more_menu);
     submenu_set_header(app->more_menu, "More");
-    submenu_add_item(app->more_menu, "Save", 0, leaf_flip_more_menu_callback, app);
-    submenu_add_item(app->more_menu, "Info", 1, leaf_flip_more_menu_callback, app);
+    submenu_add_item(app->more_menu, "Save", MORE_IDX_SAVE, leaf_flip_more_menu_callback, app);
+    submenu_add_item(app->more_menu, "Info", MORE_IDX_INFO, leaf_flip_more_menu_callback, app);
+    if (app->result.open_id[0] != '\0')
+    {
+        bool listed = leaf_flip_access_list_lookup(app, app->result.open_id, NULL, 0);
+        submenu_add_item(
+            app->more_menu,
+            listed ? "Remove from access list" : "Add to access list",
+            MORE_IDX_ACCESS_TOGGLE,
+            leaf_flip_more_menu_callback,
+            app);
+    }
     app->current_view = LeafFlipViewMoreMenu;
     view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewMoreMenu);
 }
@@ -305,9 +444,6 @@ void leaf_flip_show_error(LeafFlipApp *app)
     text_box_reset(app->text_box);
     text_box_set_font(app->text_box, TextBoxFontText);
     text_box_set_text(app->text_box, furi_string_get_cstr(app->text));
-    app->text_mode = LeafFlipTextModeMessage;
-    app->current_view = LeafFlipViewTextBox;
-    view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewTextBox
     app->text_mode = LeafFlipTextModeMessage;
     app->current_view = LeafFlipViewTextBox;
     view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewTextBox);
@@ -429,13 +565,28 @@ static bool leaf_flip_custom_event_callback(void *context, uint32_t event)
     {
         leaf_flip_stop_nfc(app);
         app->result_loaded = true;
-        leaf_flip_show_verified(app);
+        if (app->mode == LeafFlipModeAccess)
+        {
+            leaf_flip_handle_access_result(app);
+        }
+        else
+        {
+            leaf_flip_show_verified(app);
+        }
         return true;
     }
     else if (event == LeafFlipEventError)
     {
         leaf_flip_stop_nfc(app);
-        leaf_flip_show_error(app);
+        if (app->mode == LeafFlipModeAccess)
+        {
+            const char *reason = app->error[0] ? app->error : "Card not verified";
+            leaf_flip_show_access_result(app, false, NULL, reason);
+        }
+        else
+        {
+            leaf_flip_show_error(app);
+        }
         return true;
     }
     return false;
@@ -454,25 +605,19 @@ static bool leaf_flip_back_event_callback(void *context)
         leaf_flip_show_main_menu(app);
         return true;
     case LeafFlipViewVerified:
-        leaf_flip_show_main_menu(app);
+        if (app->mode == LeafFlipModeAccess)
+            leaf_flip_start_access_scan(app);
+        else
+            leaf_flip_show_main_menu(app);
+        return true;
+    case LeafFlipViewMoreMenu:
+        leaf_flip_show_verified(app);
         return true;
     case LeafFlipViewTextBox:
         if (app->text_mode == LeafFlipTextModeInfo)
         {
             if (info_from_more)
                 leaf_flip_show_more_menu(app);
-            else
-                leaf_flip_show_main_menu(app);
-        }
-        else /* Message */
-        {
-            if (app->result_loaded)
-                leaf_flip_show_more_menu(app);
-            else
-                leaf_flip_show_main_menu(app);
-        }
-        return true;
-    case LeafFlipViewFilenamhow_more_menu(app);
             else
                 leaf_flip_show_main_menu(app);
         }
@@ -517,7 +662,13 @@ static LeafFlipApp *leaf_flip_alloc(void)
         app->view_dispatcher, LeafFlipViewMainMenu, submenu_get_view(app->main_menu));
     app->more_menu = submenu_alloc();
     view_dispatcher_add_view(
-        app->view_dispatcher, LeafFlipViewTextBoxs, widget_get_view(app->progress_widget));
+        app->view_dispatcher, LeafFlipViewMoreMenu, submenu_get_view(app->more_menu));
+    app->popup = popup_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, LeafFlipViewScanPopup, popup_get_view(app->popup));
+    app->progress_widget = widget_alloc();
+    view_dispatcher_add_view(
+        app->view_dispatcher, LeafFlipViewProgress, widget_get_view(app->progress_widget));
     app->verified_widget = widget_alloc();
     view_dispatcher_add_view(
         app->view_dispatcher, LeafFlipViewVerified, widget_get_view(app->verified_widget));
@@ -538,8 +689,7 @@ static LeafFlipApp *leaf_flip_alloc(void)
 static void leaf_flip_free(LeafFlipApp *app)
 {
     leaf_flip_stop_nfc(app);
-    TextBox
-        nfc_free(app->nfc);
+    nfc_free(app->nfc);
 
     view_dispatcher_remove_view(app->view_dispatcher, LeafFlipViewFilename);
     text_input_free(app->text_input);

@@ -1,0 +1,10 @@
+# LeafFlip access list — one Open ID per 12-digit line, optional alias after a space.
+# Lines beginning with '#' or blank lines are ignored.
+# Edit on your SD card at: /ext/apps_data/leaf_flip/access_list.txt
+
+123456789012 Alice
+234567890123 Bob (front door)
+345678901234 Conference Room A
+
+# Entry without alias — the Open ID itself is shown on the GRANTED screen
+456789012345

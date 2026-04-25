@@ -36,6 +36,14 @@
 #define LEAF_FLIP_APP_FOLDER EXT_PATH("apps_data/leaf_flip")
 #define LEAF_FLIP_FILE_EXT ".lvr"
 #define LEAF_FLIP_FILE_HEADER "LeafFlip Result"
+#define LEAF_FLIP_ACCESS_LIST_PATH EXT_PATH("apps_data/leaf_flip/access_list.txt")
+#define LEAF_FLIP_ALIAS_MAX 32
+
+typedef enum
+{
+    LeafFlipModeRead = 0,
+    LeafFlipModeAccess,
+} LeafFlipMode;
 
 typedef enum
 {
@@ -118,6 +126,7 @@ struct LeafFlipApp
     } text_mode;
     LeafFlipResult result;
     bool result_loaded;
+    LeafFlipMode mode;
     int progress_step;
     uint16_t last_sw;
     const char *stage;
@@ -148,5 +157,15 @@ void leaf_flip_show_info(LeafFlipApp *app);
 void leaf_flip_show_message(LeafFlipApp *app, const char *header, const char *body);
 void leaf_flip_show_save_dialog(LeafFlipApp *app);
 void leaf_flip_show_error(LeafFlipApp *app);
+void leaf_flip_show_access_result(LeafFlipApp *app, bool granted, const char *label, const char *reason);
 void leaf_flip_set_error(LeafFlipApp *app, const char *format, ...);
 void leaf_flip_signal_progress(LeafFlipApp *app, LeafFlipStep step);
+
+/* Access list management */
+bool leaf_flip_access_list_exists(LeafFlipApp *app);
+/* Returns true if open_id is in the list. If found and alias_out non-NULL,
+ * copies the alias (may be empty string) into alias_out (size alias_out_size). */
+bool leaf_flip_access_list_lookup(
+    LeafFlipApp *app, const char *open_id, char *alias_out, size_t alias_out_size);
+bool leaf_flip_access_list_add(LeafFlipApp *app, const char *open_id, const char *alias);
+bool leaf_flip_access_list_remove(LeafFlipApp *app, const char *open_id);
