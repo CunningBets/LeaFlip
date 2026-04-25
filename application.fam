@@ -1,6 +1,6 @@
 App(
     appid="leaf_flip",
-    name="LeafFlip",
+    name="LeaFlip",
     apptype=FlipperAppType.EXTERNAL,
     entry_point="leaf_flip_app",
     stack_size=6 * 1024,

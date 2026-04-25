@@ -1,4 +1,4 @@
-# LeafFlip
+# LeaFlip
 
 A [Flipper Zero](https://flipperzero.one/) app that reads and verifies **LEAF Verified** Open Application cards over NFC (ISO 14443-4 / NXP MIFARE DUOX). Built as a companion / hardware port of the official LEAF reference reader.
 

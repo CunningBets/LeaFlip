@@ -115,14 +115,14 @@ static void leaf_flip_main_menu_callback(void *context, uint32_t index)
 void leaf_flip_show_main_menu(LeafFlipApp *app)
 {
     submenu_reset(app->main_menu);
-    submenu_set_header(app->main_menu, "LeafFlip");
+    submenu_set_header(app->main_menu, "LeaFlip");
     submenu_add_item(app->main_menu, "Read LEAF card", 0, leaf_flip_main_menu_callback, app);
     if (leaf_flip_access_list_exists(app))
     {
         submenu_add_item(
             app->main_menu, "Access Verifier", 1, leaf_flip_main_menu_callback, app);
     }
-    submenu_add_item(app->main_menu, "Load past read", 2, leaf_flip_main_menu_callback, app);
+    submenu_add_item(app->main_menu, "Saved", 2, leaf_flip_main_menu_callback, app);
     app->current_view = LeafFlipViewMainMenu;
     view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewMainMenu);
 }
@@ -513,6 +513,14 @@ static void leaf_flip_load_from_file(LeafFlipApp *app)
     bool picked = dialog_file_browser_show(app->dialogs, path, path, &opts);
     if (picked)
     {
+        /* Show a loading screen immediately so the main menu doesn't flash
+         * while leaf_flip_load_result parses and verifies the file. */
+        popup_reset(app->popup);
+        popup_set_header(app->popup, "Loading...", 64, 14, AlignCenter, AlignTop);
+        popup_set_text(app->popup, "Parsing saved read", 64, 36, AlignCenter, AlignTop);
+        app->current_view = LeafFlipViewScanPopup;
+        view_dispatcher_switch_to_view(app->view_dispatcher, LeafFlipViewScanPopup);
+
         if (leaf_flip_load_result(app, furi_string_get_cstr(path)))
         {
             info_from_more = false;
