@@ -7,7 +7,7 @@ App(
     fap_category="NFC",
     fap_version="0.2",
     fap_description="LEAF Verified Open Application reader",
-    fap_author="pat",
+    fap_icon="leaflip.png",  # 10x10 1-bit PNG
     fap_libs=["mbedtls"],
     sources=["*.c"],
 )
