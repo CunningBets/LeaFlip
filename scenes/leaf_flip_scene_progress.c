@@ -2,9 +2,9 @@
 
 static const char* const step_labels[LeafFlipStepCount] = {
     "Select",
-    "Read certificate",
-    "Verify cert chain",
-    "Internal Auth",
+    "Read cert",
+    "Verify cert",
+    "Auth challenge",
     "Verify card sig",
 };
 
@@ -16,9 +16,9 @@ void leaf_flip_update_progress(LeafFlipApp* app) {
     for(int i = 0; i < LeafFlipStepCount; i++) {
         char line[40];
         const char* mark = (i <= completed) ? "[x]" : "[ ]";
-        snprintf(line, sizeof(line), "%s %s", mark, step_labels[i]);
+        snprintf(line, sizeof(line), "%s%s", mark, step_labels[i]);
         widget_add_string_element(
-            app->progress_widget, 4, 20 + i * 9, AlignLeft, AlignTop, FontSecondary, line);
+            app->progress_widget, 4, 15 + i * 10, AlignLeft, AlignTop, FontKeyboard, line);
     }
 }
 
